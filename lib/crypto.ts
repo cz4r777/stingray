@@ -5,10 +5,28 @@
 // See docs/invariants.md I2, I3, I5, I6, I7, I8 and docs/security_rules.md §3.
 // KDF provider selection rationale: docs/spikes/T-001-kdf-provider-comparison.md.
 
+// PRNG WIRING — load polyfill + first-party fallback BEFORE tweetnacl import.
+//
+// react-native-get-random-values is the standard polyfill that populates
+// `global.crypto.getRandomValues` from the native CSPRNG. It worked in dev
+// but failed to register in some EAS-built APKs ("Enroll failed: no prng").
+// To make randomness load-bearing-reliable, we ALSO explicitly wire
+// tweetnacl's PRNG to expo-crypto (first-party Expo native module, always
+// linked in an Expo build). Belt and suspenders.
 import 'react-native-get-random-values';
+import * as ExpoCrypto from 'expo-crypto';
 import nacl from 'tweetnacl';
 import { decodeBase64, encodeBase64, decodeUTF8, encodeUTF8 } from 'tweetnacl-util';
 import sodium from 'react-native-libsodium';
+
+// Explicit wiring of tweetnacl's PRNG. This runs once at module load, before
+// any nacl.randomBytes / nacl.box.keyPair / nacl.sign.keyPair call. If the
+// get-random-values polyfill loaded first, tweetnacl would already be fine;
+// this just guarantees correctness regardless of polyfill state.
+nacl.setPRNG((x, n) => {
+  const bytes = ExpoCrypto.getRandomBytes(n);
+  for (let i = 0; i < n; i++) x[i] = bytes[i];
+});
 
 export type KeyPair = { publicKey: Uint8Array; secretKey: Uint8Array };
 
