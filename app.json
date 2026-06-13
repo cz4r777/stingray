@@ -30,6 +30,15 @@
     "experiments": {
       "typedRoutes": true,
       "baseUrl": "/stingray"
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "162ccb29-e100-4899-8cdd-32b7de848616"
+      }
+    },
+    "owner": "brookz"
   }
 }
