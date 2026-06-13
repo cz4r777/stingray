@@ -126,6 +126,13 @@ Once installed: switch the phone to Wi-Fi (or airplane mode + Wi-Fi), open the a
 
 **The APK installs and lets you exercise the UI, vault, Faraday gate, contacts, SAS verification, and panic wipe.** To actually send messages between two phones you also need a relay — see "Run it locally" below for the 5-minute Supabase setup.
 
+#### Troubleshooting install
+
+- **White screen on launch?** You probably have a cached older APK. On the phone: Settings → Apps → stingray → Storage → **Clear storage**, then **Uninstall**. Open Files / Downloads, delete any `stingray-*.apk` files. Re-scan the QR. Install fresh.
+- **App stuck on Unlock and you don't have a passphrase?** That's the protocol. There is no recovery (by design). Tap **Panic wipe** at the bottom of the unlock screen, confirm, and you'll be sent back to Enrol. "Wrong passphrase" and "no vault" intentionally show the same error so an attacker can't probe.
+- **Send fails with a relay error?** Expected on the alpha APK — it ships with placeholder relay credentials. Set up your own free Supabase relay per "Run it locally" below.
+- **"App not installed" when reinstalling?** Android refuses to overwrite an app at the same versionCode. Uninstall the old one first.
+
 ### Or try the web demo (no install)
 
 **Live web demo**: <https://cz4r777.github.io/stingray/>
