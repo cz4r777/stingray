@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "stingray",
+    "slug": "stingray",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "stingray",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.stingray.app"
+    },
+    "android": {
+      "package": "com.stingray.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#000000"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "react-native-libsodium"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

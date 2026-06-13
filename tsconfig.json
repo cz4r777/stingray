@@ -1,0 +1,24 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  "exclude": [
+    "node_modules",
+    "adamant-im",
+    "session-android",
+    "tfc",
+    "themis",
+    "threema-android",
+    "threema-ios",
+    ".expo",
+    "dist",
+    "web-build",
+    "ios",
+    "android"
+  ]
+}
