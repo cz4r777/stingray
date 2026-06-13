@@ -1,17 +1,19 @@
 {
   "expo": {
-    "name": "stingray",
+    "name": "stingray alpha 0.1.1",
     "slug": "stingray",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "scheme": "stingray",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "buildNumber": "2",
       "supportsTablet": true,
       "bundleIdentifier": "com.stingray.app"
     },
     "android": {
+      "versionCode": 2,
       "package": "com.stingray.app",
       "adaptiveIcon": {
         "backgroundColor": "#000000"
