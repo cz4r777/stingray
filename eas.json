@@ -19,7 +19,9 @@
         "gradleCommand": ":app:assembleRelease"
       },
       "env": {
-        "EXPO_PUBLIC_FARADAY_MODE": "true"
+        "EXPO_PUBLIC_FARADAY_MODE": "true",
+        "EXPO_PUBLIC_RELAY_URL": "https://demo-relay.invalid",
+        "EXPO_PUBLIC_RELAY_ANON_KEY": "demo-anon-key-placeholder"
       }
     },
     "production": {
