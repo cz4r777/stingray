@@ -110,18 +110,39 @@ The relay is a dumb pipe. Anyone reading its database sees only "recipient pubke
 
 ---
 
-## Run it (alpha)
+## Try it now (alpha demo)
+
+**Live web demo**: <https://cz4r777.github.io/stingray/>
+
+The demo runs the full UI in your browser. You can:
+
+- enrol a vault (Argon2id KDF runs locally in your browser)
+- generate your public key
+- see the Faraday transport classification (the browser tells the app what kind of network it's on)
+- add a contact and generate the 7-digit SAS code
+- see the chat, conversations, and panic-wipe UI
+
+**What the demo cannot do** (because it has no real relay configured): actually send or receive messages. The send button surfaces the relay error honestly rather than pretending. To get real messaging, run the full local setup below.
+
+---
+
+## Run it locally (5-minute setup)
 
 ```bash
-# 1. Install JS deps (~200 MB, run on unmetered Wi-Fi)
+# 1. Clone and install JS deps (~200 MB, run on unmetered Wi-Fi)
+git clone https://github.com/cz4r777/stingray.git
+cd stingray
 npm install
 
-# 2. Create a Supabase project (this is your opaque relay; the server CANNOT decrypt)
+# 2. Create a free Supabase project at https://supabase.com
+#    (this is YOUR opaque relay; the server CANNOT decrypt anything)
 cp .env.example .env
-#    then edit .env with values from your Supabase project (see supabase/README.md)
+#    then edit .env with your project's URL + anon key
+#    (Project Settings → API in the Supabase dashboard)
 
 # 3. Apply the relay schema
 #    Supabase → SQL Editor → paste supabase/schema.sql → Run.
+#    (Re-running is safe — the schema is idempotent.)
 
 # 4. Run it (must be on Wi-Fi — the Faraday gate refuses cellular)
 npm run web         # opens in browser
@@ -129,7 +150,14 @@ npm run android     # needs Android Studio / emulator or USB device
 npm run ios         # macOS only
 ```
 
-Then, to test a real two-user flow: enroll a vault, copy your public key from the Contacts tab, share it out-of-band, paste the peer's key in their Contacts tab, **compare the 7-digit SAS code on a separate channel**, tap *"I verified the same 7 digits"*, send a message.
+Then, to test a real two-user flow:
+
+1. Enrol a vault, copy your public key from the Contacts tab.
+2. Share it with a peer **out-of-band** (in person, paper, QR on an air-gapped device, anything but the carrier).
+3. Paste their key in your Contacts tab. The app shows a 7-digit SAS code.
+4. **Compare the SAS code on a separate channel** (voice call, in person).
+5. Tap *"I verified the same 7 digits"*. The contact is now marked verified.
+6. Open the chat and send a message.
 
 If you cannot or do not want to set up your own relay yet, follow along with [docs/architecture.md](docs/architecture.md) — the design is fully documented even if you never run it.
 

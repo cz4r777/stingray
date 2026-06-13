@@ -1,0 +1,74 @@
+# Build the Expo web bundle and deploy it to GitHub Pages on every push to main.
+#
+# What people see at the resulting URL:
+#   - the full enroll / unlock / contacts / conversations / chat UI
+#   - vault key generation works (Argon2id via libsodium-wrappers)
+#   - Faraday transport gate evaluates the browser's network state
+#   - SAS verification code generation
+#   - panic wipe
+#
+# What is intentionally inert without a relay configured:
+#   - actually sending or receiving envelopes
+#     (the README "Run it" section shows how to point at your own relay)
+#
+# This is a *demo build* of the alpha. It is not a hosted service.
+
+name: Pages — alpha web demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build web bundle
+        env:
+          # The demo build runs without a relay configured. Without these,
+          # lib/relay.ts would throw at import time. Placeholders make the
+          # bundle build and the UI render; actual messaging silently
+          # surfaces "send failed" until the user points the app at a
+          # real relay of their own.
+          EXPO_PUBLIC_RELAY_URL: 'https://demo-relay.invalid'
+          EXPO_PUBLIC_RELAY_ANON_KEY: 'demo-anon-key-placeholder'
+          EXPO_PUBLIC_FARADAY_MODE: 'true'
+        run: npx expo export -p web
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
