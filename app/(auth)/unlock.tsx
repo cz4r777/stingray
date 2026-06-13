@@ -1,18 +1,41 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useIdentity } from '@/lib/identity';
 
 export default function Unlock() {
-  const { unlock, wipe } = useIdentity();
+  const { unlock, wipe, hasVault, loading } = useIdentity();
+  const router = useRouter();
   const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false);
+
+  useEffect(() => {
+    if (loading || hasVault) return;
+    router.replace('/(auth)/enroll');
+  }, [hasVault, loading, router]);
+
+  if (loading || !hasVault) {
+    return (
+      <View style={s.container}>
+        <Text style={s.title}>Checking vault…</Text>
+        <Text style={s.sub}>
+          {!hasVault && !loading
+            ? 'No local vault was found on this device. Redirecting to enrol…'
+            : 'Looking for a local vault on this device…'}
+        </Text>
+      </View>
+    );
+  }
 
   const onSubmit = async () => {
+    if (busy || loading || submittingRef.current) return;
     // Argon2id MODERATE takes ~300–800 ms on a mid-2025 phone. The spinner is
     // intentional — the slow unlock is the per-guess cost defense from I8.
+    submittingRef.current = true;
     setBusy(true);
     const { error } = await unlock(pass);
+    submittingRef.current = false;
     setBusy(false);
     if (error) Alert.alert('Unlock failed', error);
   };
@@ -47,7 +70,7 @@ export default function Unlock() {
         <Text style={s.hint}>Deriving vault key… this is intentionally slow.</Text>
       ) : null}
       <Link href="/(auth)/enroll" style={s.link}>
-        No vault on this device — start fresh
+        Need a new identity instead? Panic wipe first, then enrol
       </Link>
       <Pressable style={s.panic} onPress={onPanic}>
         <Text style={s.panicText}>Panic wipe</Text>

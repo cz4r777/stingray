@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useIdentity } from '@/lib/identity';
 
 // INVARIANT I7: passphrase strength is the only thing standing between an
@@ -9,13 +9,34 @@ import { useIdentity } from '@/lib/identity';
 const MIN_PASS = 12;
 
 export default function Enroll() {
-  const { enroll } = useIdentity();
+  const { enroll, hasVault, loading } = useIdentity();
+  const router = useRouter();
   const [pass, setPass] = useState('');
   const [confirm, setConfirm] = useState('');
   const [alias, setAlias] = useState('');
   const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false);
+
+  useEffect(() => {
+    if (loading || !hasVault) return;
+    router.replace('/(auth)/unlock');
+  }, [hasVault, loading, router]);
+
+  if (loading || hasVault) {
+    return (
+      <View style={s.container}>
+        <Text style={s.title}>Checking vault…</Text>
+        <Text style={s.sub}>
+          {hasVault
+            ? 'A local vault already exists on this device. Redirecting to unlock…'
+            : 'Looking for an existing local vault on this device…'}
+        </Text>
+      </View>
+    );
+  }
 
   const onSubmit = async () => {
+    if (busy || loading || submittingRef.current) return;
     const a = alias.trim();
     if (a.length < 1 || a.length > 30) {
       Alert.alert('Alias', 'Pick a local alias between 1 and 30 chars.');
@@ -29,8 +50,10 @@ export default function Enroll() {
       Alert.alert('Passphrase', 'Confirmation does not match.');
       return;
     }
+    submittingRef.current = true;
     setBusy(true);
     const { error } = await enroll(pass, a);
+    submittingRef.current = false;
     setBusy(false);
     if (error) Alert.alert('Enroll failed', error);
   };
@@ -51,7 +74,7 @@ export default function Enroll() {
         <Text style={s.btnText}>{busy ? '…' : 'Create vault'}</Text>
       </Pressable>
       <Link href="/(auth)/unlock" style={s.link}>
-        Already have a vault on this device? Unlock
+        Already have a vault on this device? Unlock instead
       </Link>
     </View>
   );
