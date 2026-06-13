@@ -110,7 +110,23 @@ The relay is a dumb pipe. Anyone reading its database sees only "recipient pubke
 
 ---
 
-## Try it now (alpha demo)
+## Try it now (alpha)
+
+### Install the Android APK
+
+<a href="https://github.com/cz4r777/stingray/releases/download/v0.1.0-alpha.1/stingray-v0.1.0-alpha.1.apk">
+  <img src="assets/install-android-qr.png" alt="Scan to install stingray-v0.1.0-alpha.1.apk" width="220" align="right">
+</a>
+
+**Direct download**: [stingray-v0.1.0-alpha.1.apk](https://github.com/cz4r777/stingray/releases/download/v0.1.0-alpha.1/stingray-v0.1.0-alpha.1.apk) (~76 MB, signed)
+
+**Or scan the QR** with your Android phone's camera → tap the download notification → install. You'll need to allow "install from unknown sources" for your browser the first time.
+
+Once installed: switch the phone to Wi-Fi (or airplane mode + Wi-Fi), open the app, enrol a vault. The Faraday gate will refuse to operate over the cellular radio — that's the design, not a bug.
+
+**The APK installs and lets you exercise the UI, vault, Faraday gate, contacts, SAS verification, and panic wipe.** To actually send messages between two phones you also need a relay — see "Run it locally" below for the 5-minute Supabase setup.
+
+### Or try the web demo (no install)
 
 **Live web demo**: <https://cz4r777.github.io/stingray/>
 
