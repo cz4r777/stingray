@@ -114,11 +114,13 @@ The relay is a dumb pipe. Anyone reading its database sees only "recipient pubke
 
 ### Install the Android APK
 
-<a href="https://github.com/cz4r777/stingray/releases/download/v0.1.0-alpha.1/stingray-v0.1.0-alpha.1.apk">
-  <img src="assets/install-android-qr.png" alt="Scan to install stingray-v0.1.0-alpha.1.apk" width="220" align="right">
+<a href="https://github.com/cz4r777/stingray/releases/latest/download/stingray-android.apk">
+  <img src="assets/install-android-qr.png" alt="Scan to install the latest stingray Android APK" width="220" align="right">
 </a>
 
-**Direct download**: [stingray-v0.1.0-alpha.1.apk](https://github.com/cz4r777/stingray/releases/download/v0.1.0-alpha.1/stingray-v0.1.0-alpha.1.apk) (~76 MB, signed)
+**Always-latest download**: [stingray-android.apk](https://github.com/cz4r777/stingray/releases/latest/download/stingray-android.apk) (~76 MB, signed) — this URL always serves the latest release.
+
+**All releases (versioned, browseable)**: [github.com/cz4r777/stingray/releases](https://github.com/cz4r777/stingray/releases) — every alpha build has its own tag (`v0.1.0-alpha.1`, `v0.1.1`, …) and a versioned APK asset alongside the stable `stingray-android.apk`.
 
 **Or scan the QR** with your Android phone's camera → tap the download notification → install. You'll need to allow "install from unknown sources" for your browser the first time.
 
