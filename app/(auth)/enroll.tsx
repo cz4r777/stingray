@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useIdentity } from '@/lib/identity';
 
@@ -52,10 +52,13 @@ export default function Enroll() {
     }
     submittingRef.current = true;
     setBusy(true);
-    const { error } = await enroll(pass, a);
-    submittingRef.current = false;
-    setBusy(false);
-    if (error) Alert.alert('Enroll failed', error);
+    try {
+      const { error } = await enroll(pass, a);
+      if (error) Alert.alert('Enroll failed', error);
+    } finally {
+      submittingRef.current = false;
+      setBusy(false);
+    }
   };
 
   return (
@@ -70,9 +73,12 @@ export default function Enroll() {
       <TextInput style={s.input} placeholder={`Passphrase (≥${MIN_PASS} chars)`} placeholderTextColor="#888" secureTextEntry value={pass} onChangeText={setPass} />
       <TextInput style={s.input} placeholder="Confirm passphrase" placeholderTextColor="#888" secureTextEntry value={confirm} onChangeText={setConfirm} />
 
-      <Pressable style={s.btn} onPress={onSubmit} disabled={busy}>
-        <Text style={s.btnText}>{busy ? '…' : 'Create vault'}</Text>
+      <Pressable style={[s.btn, busy && s.btnDisabled]} onPress={onSubmit} disabled={busy}>
+        {busy ? <ActivityIndicator color="black" /> : <Text style={s.btnText}>Create vault</Text>}
       </Pressable>
+      {busy ? (
+        <Text style={s.hint}>Creating keys and sealing the local vault… this can take a moment.</Text>
+      ) : null}
       <Link href="/(auth)/unlock" style={s.link}>
         Already have a vault on this device? Unlock instead
       </Link>
@@ -86,6 +92,8 @@ const s = StyleSheet.create({
   sub: { color: '#aaa', marginBottom: 8 },
   input: { borderWidth: 1, borderColor: '#333', borderRadius: 8, padding: 12, color: 'white', backgroundColor: '#16161a' },
   btn: { backgroundColor: '#23c483', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 8 },
+  btnDisabled: { opacity: 0.75 },
   btnText: { color: 'black', fontWeight: '700' },
+  hint: { color: '#888', textAlign: 'center', fontSize: 12 },
   link: { marginTop: 16, textAlign: 'center', color: '#7a7a7a' },
 });

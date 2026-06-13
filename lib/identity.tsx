@@ -58,20 +58,31 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   }, [strictMode]);
 
   const unlock: IdentityCtx['unlock'] = async (pass) => {
-    const v = await unlockVault(pass);
-    if (!v) return { error: 'Wrong passphrase or no vault.' };
-    setUnlocked(v); setHasVault(true);
-    return { error: null };
+    try {
+      const v = await unlockVault(pass);
+      if (!v) return { error: 'Wrong passphrase or no vault.' };
+      setUnlocked(v); setHasVault(true);
+      return { error: null };
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? e.message : 'Unlock failed unexpectedly.' };
+    }
   };
 
   const enroll: IdentityCtx['enroll'] = async (pass, alias) => {
-    if (await vaultExists()) return { error: 'Vault already exists — unlock instead.' };
-    const id = await createVault(pass, alias);
-    const v = await unlockVault(pass);
-    if (!v) return { error: 'Created vault but failed to unlock — investigate.' };
-    setUnlocked(v); setHasVault(true);
-    void id;
-    return { error: null };
+    try {
+      if (await vaultExists()) return { error: 'Vault already exists — unlock instead.' };
+      void await createVault(pass, alias);
+      // The vault is real on disk now even if auto-unlock fails.
+      setHasVault(true);
+      const v = await unlockVault(pass);
+      if (!v) {
+        return { error: 'Vault created, but automatic unlock failed. Use Unlock on this device.' };
+      }
+      setUnlocked(v);
+      return { error: null };
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? e.message : 'Vault creation failed unexpectedly.' };
+    }
   };
 
   const lock = () => setUnlocked(null);

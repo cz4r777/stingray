@@ -34,10 +34,13 @@ export default function Unlock() {
     // intentional — the slow unlock is the per-guess cost defense from I8.
     submittingRef.current = true;
     setBusy(true);
-    const { error } = await unlock(pass);
-    submittingRef.current = false;
-    setBusy(false);
-    if (error) Alert.alert('Unlock failed', error);
+    try {
+      const { error } = await unlock(pass);
+      if (error) Alert.alert('Unlock failed', error);
+    } finally {
+      submittingRef.current = false;
+      setBusy(false);
+    }
   };
 
   const onPanic = () => {
