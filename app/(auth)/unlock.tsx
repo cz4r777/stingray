@@ -1,19 +1,41 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Platform } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useIdentity } from '@/lib/identity';
 
 export default function Unlock() {
-  const { unlock, wipe, hasVault, loading } = useIdentity();
+  const { unlock, unlockBiometric, wipe, hasVault, loading, biometricUnlockReady } = useIdentity();
   const router = useRouter();
   const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
+  // v0.1.5 — biometric-first auto-prompt. Fires once on mount when the
+  // OS-cached vault key is available. If the user cancels we DO NOT
+  // re-prompt automatically (would be hostile UX); we leave the
+  // passphrase input visible and offer a "Try biometric" pill instead.
+  const autoBioFiredRef = useRef(false);
+  const [bioBusy, setBioBusy] = useState(false);
+  const [bioOffered, setBioOffered] = useState<boolean>(biometricUnlockReady);
+
+  useEffect(() => {
+    setBioOffered(biometricUnlockReady);
+  }, [biometricUnlockReady]);
 
   useEffect(() => {
     if (loading || hasVault) return;
     router.replace('/(auth)/enroll');
   }, [hasVault, loading, router]);
+
+  // Auto-prompt biometric on mount when a cached key is available.
+  // We do NOT auto-prompt on web (no hardware) or after a panic wipe.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    if (loading || !hasVault || !biometricUnlockReady) return;
+    if (autoBioFiredRef.current) return;
+    autoBioFiredRef.current = true;
+    void tryBiometric();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, hasVault, biometricUnlockReady]);
 
   if (loading || !hasVault) {
     return (
@@ -26,6 +48,21 @@ export default function Unlock() {
         </Text>
       </View>
     );
+  }
+
+  async function tryBiometric() {
+    if (bioBusy) return;
+    setBioBusy(true);
+    try {
+      const { error } = await unlockBiometric();
+      if (error) {
+        // Don't alert — user may have cancelled deliberately. Leave the
+        // passphrase input visible. The "Try biometric" pill stays.
+        return;
+      }
+    } finally {
+      setBioBusy(false);
+    }
   }
 
   const onSubmit = async () => {
@@ -57,7 +94,18 @@ export default function Unlock() {
   return (
     <View style={s.container}>
       <Text style={s.title}>Unlock</Text>
-      <Text style={s.sub}>Enter the passphrase that decrypts your local key vault.</Text>
+      <Text style={s.sub}>
+        {bioOffered
+          ? 'Tap your fingerprint sensor or use Face Unlock. Or enter your passphrase.'
+          : 'Enter the passphrase that decrypts your local key vault.'}
+      </Text>
+
+      {bioOffered ? (
+        <Pressable style={[s.bioBtn, bioBusy && s.btnDisabled]} onPress={tryBiometric} disabled={bioBusy}>
+          {bioBusy ? <ActivityIndicator color="black" /> : <Text style={s.bioBtnText}>Use biometric</Text>}
+        </Pressable>
+      ) : null}
+
       <TextInput
         style={s.input}
         placeholder="Passphrase"
@@ -67,7 +115,7 @@ export default function Unlock() {
         onChangeText={setPass}
       />
       <Pressable style={s.btn} onPress={onSubmit} disabled={busy}>
-        {busy ? <ActivityIndicator color="black" /> : <Text style={s.btnText}>Unlock</Text>}
+        {busy ? <ActivityIndicator color="black" /> : <Text style={s.btnText}>Unlock with passphrase</Text>}
       </Pressable>
       {busy ? (
         <Text style={s.hint}>Deriving vault key… this is intentionally slow.</Text>
@@ -89,6 +137,9 @@ const s = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#333', borderRadius: 8, padding: 12, color: 'white', backgroundColor: '#16161a' },
   btn: { backgroundColor: '#23c483', padding: 14, borderRadius: 8, alignItems: 'center' },
   btnText: { color: 'black', fontWeight: '700' },
+  btnDisabled: { opacity: 0.75 },
+  bioBtn: { backgroundColor: '#23c483', padding: 14, borderRadius: 8, alignItems: 'center', marginBottom: 4 },
+  bioBtnText: { color: 'black', fontWeight: '700' },
   link: { marginTop: 16, textAlign: 'center', color: '#7a7a7a' },
   hint: { color: '#888', textAlign: 'center', fontSize: 12 },
   panic: { marginTop: 'auto', padding: 12, alignItems: 'center' },

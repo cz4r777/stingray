@@ -101,6 +101,25 @@ Rules the code must NEVER violate. Each has the rule, the code/policy location e
 
 **History:** v0 shipped a 200k-round BLAKE2b hash chain as a placeholder. T-001 (2026-05-21) replaced it with Argon2id via `react-native-libsodium`. The legacy KDF survives as `deriveVaultKeyV1Legacy()` purely so the `.v1 → .v2` vault migration can unlock prior blobs once per device.
 
+### I8.1. Biometric unlock is enforced; the passphrase remains the cryptographic root
+**Rule:** On native (iOS / Android), `createVault()` MUST NOT be called unless the device reports both biometric hardware AND at least one enrolled biometric (fingerprint or face). After enrolment and after every successful passphrase unlock, the derived vault key is cached into a hardware-backed `expo-secure-store` slot with `requireAuthentication: true`, so that subsequent launches can unlock via OS biometric prompt without re-deriving from the passphrase. The passphrase is the cryptographic root; biometric is a convenience-and-rate-limit gate on the cached symmetric key, not a replacement for the Argon2id derivation.
+
+**Where:**
+- [`lib/biometric.ts`](../lib/biometric.ts) — `getBiometricCapability()`, `enforceBiometric()`, `promptBiometric()`.
+- [`lib/vault.ts`](../lib/vault.ts) — `BIOKEY_KEY_V1`, `BIOKEY_FLAG_V1`, `unlockVaultBiometric()`, `tryCacheVaultKeyForBiometric()`, `tryDeleteBiometricCache()`.
+- [`app/(auth)/enroll.tsx`](../app/(auth)/enroll.tsx) — pre-check gate + submit-time `enforceBiometric()` re-check.
+- [`app/(auth)/unlock.tsx`](../app/(auth)/unlock.tsx) — auto-prompt biometric on mount, passphrase fallback always visible.
+
+**Why:** IMSI-catcher targets are typically also physical-coercion targets. A pure-passphrase unlock means an attacker who shoulder-surfs the passphrase once owns every future unlock. Biometric-gated cached key adds: (a) per-unlock OS authenticator gate that can't be observed remotely, (b) hardware-backed key storage that survives userland compromise, (c) Android KeyStore invalidation on biometric re-enrol — an attacker who adds their own fingerprint after stealing the device cannot unlock the cached key.
+
+**How to apply:**
+- Web has no biometric hardware, so the gate is bypassed on web ONLY. Web demos at `cz4r777.github.io/stingray` still ship with passphrase unlock and no cached key — this is explicit.
+- Any new flow that stores a long-lived secret on disk must use the same `requireAuthentication: true` pattern, not a plain `expo-secure-store` write.
+- `panicWipe()` MUST clear BOTH `BIOKEY_KEY_V1` AND `BIOKEY_FLAG_V1`. Leaving the flag without the key would prompt the user for biometric forever with no possible success — a stuck-UI regression.
+- Lowering the gate (e.g. "skip biometric on web" extending to native) requires Supervisor sign-off and a `threat_model.md` residual-risk update.
+
+**History:** v0.1.5 (2026-06-14) introduced enforced biometric on native after the user's explicit instruction "i want the user accounts to be remembered on the device" + "enforce biometrics and encryption". Web demo continues passphrase-only.
+
 ### I9. Contact verification is explicit, persisted, and visible
 **Rule:** A contact is `unverified` until the user records a successful SAS comparison. The UI shows the verification state in every place the contact's name or messages appear.
 
@@ -111,13 +130,13 @@ Rules the code must NEVER violate. Each has the rule, the code/policy location e
 **How to apply:** No contact persistence path may default to "verified". No UI element may suggest a contact is trustworthy when `sas_state !== 'verified'`.
 
 ### I10. Panic wipe deletes salt AND blob, atomically as far as the API allows
-**Rule:** `panicWipe()` removes `stingray.vault.salt.v1` and `stingray.vault.blob.v1`. Leaving one without the other creates an oracle (an attacker who later sees one can attempt offline attack against the cached counterpart).
+**Rule:** `panicWipe()` removes `stingray.vault.salt.v1`, `stingray.vault.salt.v2`, `stingray.vault.blob.v1`, `stingray.vault.blob.v2`, AND v0.1.5's biometric cache (`stingray.vault.biokey.v1` + `stingray.vault.bioenabled.v1`). Leaving any of these without the others creates an oracle or a stuck UI; partial wipe is worse than no wipe.
 
 **Where:** [`lib/vault.ts`](../lib/vault.ts) — `panicWipe()`.
 
 **Why:** Wipe is the user's last line of defense in an immediate physical-coercion scenario; partial wipe is worse than no wipe at all.
 
-**How to apply:** Any future wipe enhancement (timed wipe, duress passphrase) must clear both, in order: salt first (so an interrupt mid-wipe leaves blob without salt — undecryptable), then blob.
+**How to apply:** Any future wipe enhancement (timed wipe, duress passphrase) must clear both, in order: salt first (so an interrupt mid-wipe leaves blob without salt — undecryptable), then blob, then the biometric cache (the auth-bound key BEFORE the plain flag).
 
 ---
 

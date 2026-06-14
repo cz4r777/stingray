@@ -3,8 +3,12 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AppState } from 'react-native';
-import { vaultExists, unlockVault, createVault, panicWipe, UnlockedVault } from './vault';
+import {
+  vaultExists, unlockVault, createVault, panicWipe, UnlockedVault,
+  biometricUnlockAvailable, unlockVaultBiometric,
+} from './vault';
 import { setRuntimeFaradayStrict, subscribeTransport } from './transport';
+import { getBiometricCapability, type BiometricCapability } from './biometric';
 import type { FaradayVerdict, Identity } from './types';
 
 type IdentityCtx = {
@@ -15,7 +19,16 @@ type IdentityCtx = {
   faraday: FaradayVerdict | null;
   strictMode: boolean;
   privacyShielded: boolean;
+  // v0.1.5 — enforced biometric.
+  // `biometricCapability` is the OS-reported hardware/enrolment state.
+  // `biometricUnlockReady` is true iff there is a cached vault key on disk
+  //   that the OS will release after a biometric prompt — i.e. the user
+  //   has at least one previous passphrase unlock and the cache slot
+  //   has not been wiped.
+  biometricCapability: BiometricCapability | null;
+  biometricUnlockReady: boolean;
   unlock: (passphrase: string) => Promise<{ error: string | null }>;
+  unlockBiometric: () => Promise<{ error: string | null }>;
   enroll: (passphrase: string, alias: string) => Promise<{ error: string | null }>;
   lock: () => void;
   wipe: () => Promise<void>;
@@ -34,9 +47,13 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   const [faraday, setFaraday] = useState<FaradayVerdict | null>(null);
   const [strictMode, setStrictMode] = useState(false);
   const [privacyShielded, setPrivacyShielded] = useState(false);
+  const [biometricCapability, setBiometricCapability] = useState<BiometricCapability | null>(null);
+  const [biometricUnlockReady, setBiometricUnlockReady] = useState(false);
 
   useEffect(() => {
     void vaultExists().then((b) => { setHasVault(b); setLoading(false); });
+    void getBiometricCapability().then(setBiometricCapability);
+    void biometricUnlockAvailable().then(setBiometricUnlockReady);
     return subscribeTransport(setFaraday);
   }, []);
 
@@ -62,9 +79,27 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       const v = await unlockVault(pass);
       if (!v) return { error: 'Wrong passphrase or no vault.' };
       setUnlocked(v); setHasVault(true);
+      // Passphrase unlock refreshes the biometric cache inside unlockVault;
+      // surface the new state to the UI.
+      void biometricUnlockAvailable().then(setBiometricUnlockReady);
       return { error: null };
     } catch (e: unknown) {
       return { error: e instanceof Error ? e.message : 'Unlock failed unexpectedly.' };
+    }
+  };
+
+  // v0.1.5 — biometric-only unlock. Triggers the OS biometric prompt; on
+  // success retrieves the cached vault key and decrypts the blob. On any
+  // failure (cancel, hardware refusal, invalidated key), returns an error
+  // string so the caller can fall through to the passphrase input.
+  const unlockBiometric: IdentityCtx['unlockBiometric'] = async () => {
+    try {
+      const v = await unlockVaultBiometric();
+      if (!v) return { error: 'Biometric unlock unavailable. Use your passphrase.' };
+      setUnlocked(v); setHasVault(true);
+      return { error: null };
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? e.message : 'Biometric unlock failed.' };
     }
   };
 
@@ -79,6 +114,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         return { error: 'Vault created, but automatic unlock failed. Use Unlock on this device.' };
       }
       setUnlocked(v);
+      // Refresh biometric availability after enrol (createVault attempts the
+      // cache write inline).
+      void biometricUnlockAvailable().then(setBiometricUnlockReady);
       return { error: null };
     } catch (e: unknown) {
       return { error: e instanceof Error ? e.message : 'Vault creation failed unexpectedly.' };
@@ -90,6 +128,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   const wipe = async () => {
     await panicWipe();
     setUnlocked(null); setHasVault(false);
+    setBiometricUnlockReady(false);
   };
 
   const armStrictMode = () => {
@@ -116,7 +155,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       faraday,
       strictMode,
       privacyShielded,
-      unlock, enroll, lock, wipe,
+      biometricCapability,
+      biometricUnlockReady,
+      unlock, unlockBiometric, enroll, lock, wipe,
       armStrictMode,
       disarmStrictMode,
       revealSensitiveScreen,

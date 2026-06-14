@@ -34,6 +34,14 @@ const BLOB_KEY_V1 = 'stingray.vault.blob.v1';
 // .v2 storage keys (T-001; the current write path).
 const SALT_KEY_V2 = 'stingray.vault.salt.v2';
 const BLOB_KEY_V2 = 'stingray.vault.blob.v2';
+// v0.1.5 — biometric-gated cached vault key. The key slot is opened by
+// expo-secure-store with `requireAuthentication: true`, which binds the
+// underlying KeyStore / Keychain entry to a biometric prompt on read.
+// The companion flag is plain (no auth) so the UI can know whether to
+// offer the biometric path WITHOUT triggering an OS prompt.
+// INVARIANT I8.1: panic wipe must clear BOTH this key and the flag.
+const BIOKEY_KEY_V1 = 'stingray.vault.biokey.v1';
+const BIOKEY_FLAG_V1 = 'stingray.vault.bioenabled.v1';
 
 // .v2 payload — adds `kdf_params` so future param bumps don't lock users out:
 // every blob unlocks with the params it was encrypted under.
@@ -106,6 +114,14 @@ export async function createVault(passphrase: string, alias: string): Promise<Id
   await writeItem(SALT_KEY_V2, b64(salt));
   await writeItem(BLOB_KEY_V2, b64(blob));
 
+  // v0.1.5: enforced biometric. enroll.tsx pre-checks hardware + enrolment
+  // before calling createVault, so by the time we reach here the user is
+  // expected to have a biometric ready. The cache write itself is best-
+  // effort: if the OS refuses the auth-bound write (no enrolled biometric,
+  // unsupported on web, etc.), we fall back to passphrase-only unlock and
+  // the next successful passphrase unlock will re-attempt the cache.
+  void await tryCacheVaultKeyForBiometric(key);
+
   return {
     pubkey_hex: payload.box_pk_hex,
     sign_pubkey_hex: payload.sign_pk_hex,
@@ -148,6 +164,9 @@ export async function unlockVault(passphrase: string): Promise<UnlockedVault | n
       // Opportunistic cleanup if a stale .v1 still lingers from a previous
       // half-finished migration.
       await maybeDeleteV1();
+      // v0.1.5: refresh the biometric cache after a successful passphrase
+      // unlock so subsequent launches can offer biometric-only.
+      void await tryCacheVaultKeyForBiometric(tryV2.vault_key);
       return tryV2;
     }
     return null;
@@ -184,6 +203,10 @@ export async function unlockVault(passphrase: string): Promise<UnlockedVault | n
   await writeItem(SALT_KEY_V2, b64(newSalt));
   await writeItem(BLOB_KEY_V2, b64(newBlob));
   await maybeDeleteV1();
+
+  // v0.1.5: after a successful passphrase unlock (incl. v1→v2 migration),
+  // refresh the biometric cache so the next launch can offer biometric-only.
+  void await tryCacheVaultKeyForBiometric(newKey);
 
   return {
     identity: identityFromPayloadV2(v2Payload),
@@ -254,12 +277,100 @@ export async function panicWipe(): Promise<void> {
   await deleteItem(SALT_KEY_V2);
   await deleteItem(BLOB_KEY_V1);
   await deleteItem(BLOB_KEY_V2);
+  // v0.1.5 / INVARIANT I8.1: biometric-cached key + enabled flag.
+  // The order matters: clear the auth-bound slot BEFORE the flag so a
+  // crash mid-wipe doesn't leave the UI offering biometric over a key
+  // that no longer exists.
+  await tryDeleteBiometricCache();
   // Local-store entries — T-002 onwards.
   // GREP MARKER: every STORE_KEYS entry MUST appear in this list. Adding a
   // new local_store key without updating this function is a partial-wipe
   // regression (INVARIANT I10). The Reviewer's grep target is `STORE_KEYS.`.
   await localStoreDel(STORE_KEYS.CONTACTS);
   await localStoreDel(STORE_KEYS.CONVERSATIONS);
+}
+
+// --- v0.1.5 biometric layer ----------------------------------------------
+//
+// Biometric is a CONVENIENCE on top of the passphrase root, NOT a replacement
+// for it. The cryptographic root remains the Argon2id-derived vault key (I8).
+// We cache that derived key in a hardware-backed slot that the OS will only
+// release after a biometric prompt. If the slot is gone, invalidated, or the
+// device has none, the user falls back to the passphrase path — which on
+// success re-caches.
+//
+// The flag (BIOKEY_FLAG_V1) lets the UI know whether to offer biometric
+// without first triggering an OS prompt. Reading the slot itself ALWAYS
+// prompts — that's the whole point.
+
+// `true` if a biometric-cached vault key is on disk.
+// No OS prompt is triggered — this just reads the plain flag slot.
+export async function biometricUnlockAvailable(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  return (await readItem(BIOKEY_FLAG_V1)) === '1';
+}
+
+// Unlock the vault using the biometric-cached key. Triggers the OS biometric
+// prompt. Returns null on cancel, hardware refusal, or key invalidation
+// (e.g. Android KeyPermanentlyInvalidatedException after biometric re-enrol).
+// Caller should fall back to passphrase unlock on null.
+export async function unlockVaultBiometric(): Promise<UnlockedVault | null> {
+  if (Platform.OS === 'web') return null;
+  if (!(await biometricUnlockAvailable())) return null;
+
+  let keyB64: string | null = null;
+  try {
+    keyB64 = await SecureStore.getItemAsync(BIOKEY_KEY_V1, {
+      requireAuthentication: true,
+      authenticationPrompt: 'Unlock stingray',
+    });
+  } catch {
+    // Cancelled, hardware failure, key invalidated. Do NOT clear the flag
+    // automatically — that would silently downgrade to passphrase-only after
+    // a single thumbprint slip. The user re-tries or chooses passphrase.
+    return null;
+  }
+  if (!keyB64) return null;
+
+  const blobV2 = await readItem(BLOB_KEY_V2);
+  if (!blobV2) return null;
+  const key = fromB64(keyB64);
+  const plain = vaultDecrypt(fromB64(blobV2), key);
+  if (!plain) return null;
+  let payload: VaultPayloadV2;
+  try {
+    payload = JSON.parse(utf8.decode(plain));
+  } catch {
+    return null;
+  }
+  if (payload.format !== 'v2') return null;
+  return {
+    identity: identityFromPayloadV2(payload),
+    box_sk: fromHex(payload.box_sk_hex),
+    sign_sk: fromHex(payload.sign_sk_hex),
+    vault_key: key,
+  };
+}
+
+async function tryCacheVaultKeyForBiometric(key: Uint8Array): Promise<void> {
+  if (Platform.OS === 'web') return;          // no Keychain/KeyStore on web
+  try {
+    await SecureStore.setItemAsync(BIOKEY_KEY_V1, b64(key), {
+      requireAuthentication: true,
+      keychainAccessible: SecureStore.WHEN_UNLOCKED,
+    });
+    await writeItem(BIOKEY_FLAG_V1, '1');
+  } catch {
+    // No biometric set up, write blocked, etc. Best-effort: leave the
+    // flag unset so the UI keeps prompting for passphrase. The next
+    // successful passphrase unlock will retry the cache.
+  }
+}
+
+async function tryDeleteBiometricCache(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try { await SecureStore.deleteItemAsync(BIOKEY_KEY_V1); } catch { /* ignore */ }
+  try { await deleteItem(BIOKEY_FLAG_V1); } catch { /* ignore */ }
 }
 
 // Diagnostic helper: returns the format the on-disk vault is currently in.

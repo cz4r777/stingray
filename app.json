@@ -2,7 +2,7 @@
   "expo": {
     "name": "stingray 1.1",
     "slug": "stingray",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "orientation": "portrait",
     "scheme": "stingray",
     "userInterfaceStyle": "automatic",
@@ -32,6 +32,12 @@
         "expo-camera",
         {
           "cameraPermission": "Allow stingray to use the camera to scan a peer's public-key QR code."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow stingray to use Face ID to unlock your local key vault."
         }
       ]
     ],

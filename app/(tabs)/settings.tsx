@@ -12,7 +12,17 @@ export default function Settings() {
     disarmStrictMode,
     lock,
     wipe,
+    biometricCapability,
+    biometricUnlockReady,
   } = useIdentity();
+
+  const bioLine = !biometricCapability
+    ? '…'
+    : !biometricCapability.hasHardware
+      ? 'no biometric sensor on this device'
+      : !biometricCapability.isEnrolled
+        ? 'hardware present, no biometric enrolled'
+        : `enrolled — ${biometricCapability.strongLevel ? 'strong' : 'weak'} level`;
 
   return (
     <ScrollView style={s.bg} contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -34,6 +44,20 @@ export default function Settings() {
         <Text style={s.help}>
           Best-effort only. This hides content locally and locks down harder on unsafe transport,
           but it cannot remove malware or guaranteed remote OS-level access.
+        </Text>
+      </View>
+
+      <View style={s.card}>
+        <Text style={s.label}>Biometric</Text>
+        <Text style={s.value}>{bioLine}</Text>
+        <Text style={s.value}>
+          {biometricUnlockReady ? 'biometric unlock armed' : 'biometric unlock not cached'}
+        </Text>
+        <Text style={s.help}>
+          Enforced. Daily unlock is your fingerprint or face; the passphrase is the fallback
+          and the cryptographic root. The cached key is bound to the OS hardware-backed
+          KeyStore / Keychain — wiping the vault, re-enrolling biometric, or panic wipe
+          invalidates it.
         </Text>
       </View>
 
