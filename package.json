@@ -25,9 +25,10 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "node scripts/run-android-local.js",
+    "ios": "expo run:ios",
     "web": "expo start --web",
+    "postinstall": "node scripts/fix-libsodium-cmake.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
