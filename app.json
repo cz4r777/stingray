@@ -2,7 +2,7 @@
   "expo": {
     "name": "stingray 1.1",
     "slug": "stingray",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "orientation": "portrait",
     "scheme": "stingray",
     "userInterfaceStyle": "automatic",

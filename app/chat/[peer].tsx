@@ -136,7 +136,9 @@ export default function Chat() {
       {peerSas ? (
         <View style={[s.sasStrip, trustState === 'verified' ? s.sasStripVerified : null]}>
           <Text style={s.sasStripLabel}>SAS</Text>
-          <Text style={s.sasStripCode}>{peerSas}</Text>
+          <Text style={s.sasStripCode} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+            {peerSas}
+          </Text>
           <Text style={s.sasStripLabel}>
             {trustState === 'verified' ? '✓ verified' : 'compare with peer'}
           </Text>
@@ -223,7 +225,8 @@ const s = StyleSheet.create({
   sasStripVerified: { borderColor: '#23c483' },
   sasStripLabel: { color: '#aaa', fontSize: 11, fontWeight: '600' },
   sasStripCode: {
-    color: '#23c483', fontFamily: 'monospace', fontSize: 22,
-    letterSpacing: 4, fontWeight: '700',
+    color: '#23c483', fontFamily: 'monospace', fontSize: 18,
+    letterSpacing: 2, fontWeight: '700',
+    flex: 1, textAlign: 'center',
   },
 });
