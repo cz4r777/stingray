@@ -6,7 +6,7 @@ import { useContacts, aliasFor, sasFor, refuseMediaSend } from '@/lib/contacts';
 import { useConversations } from '@/lib/conversations';
 import { composeAndSend, drainInbox } from '@/lib/envelope';
 import { subscribeInbox, fromB64 } from '@/lib/relay';
-import { openEnvelope, utf8 } from '@/lib/crypto';
+import { openEnvelope, utf8, sasCode, fromHex } from '@/lib/crypto';
 import type { Contact, Plaintext } from '@/lib/types';
 
 export default function Chat() {
@@ -31,6 +31,14 @@ export default function Chat() {
   const headerTitle = peer
     ? `${trustDotChar(trustState)} ${headerAlias}`
     : 'Chat';
+
+  // SAS code for THIS conversation. Shown prominently at the top of the chat
+  // so the user can always re-verify out-of-band, not just at add-contact time.
+  // INVARIANT I9 — verification IS the defense at pubkey-exchange.
+  const peerSas =
+    peer && unlocked && /^[0-9a-f]{64}$/.test(peer)
+      ? sasCode(fromHex(unlocked.identity.pubkey_hex), fromHex(peer))
+      : null;
 
   useEffect(() => {
     if (!peer || !unlocked) return;
@@ -125,6 +133,15 @@ export default function Chat() {
           </Text>
         </View>
       ) : null}
+      {peerSas ? (
+        <View style={[s.sasStrip, trustState === 'verified' ? s.sasStripVerified : null]}>
+          <Text style={s.sasStripLabel}>SAS</Text>
+          <Text style={s.sasStripCode}>{peerSas}</Text>
+          <Text style={s.sasStripLabel}>
+            {trustState === 'verified' ? '✓ verified' : 'compare with peer'}
+          </Text>
+        </View>
+      ) : null}
       <FlatList
         ref={listRef}
         data={messages}
@@ -198,4 +215,15 @@ const s = StyleSheet.create({
   attachText: { color: '#888', fontSize: 22, lineHeight: 22 },
   trustBanner: { paddingHorizontal: 12, paddingVertical: 8 },
   trustBannerText: { color: 'white', fontSize: 12 },
+  sasStrip: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: '#000', borderBottomWidth: 1, borderColor: '#23c483',
+  },
+  sasStripVerified: { borderColor: '#23c483' },
+  sasStripLabel: { color: '#aaa', fontSize: 11, fontWeight: '600' },
+  sasStripCode: {
+    color: '#23c483', fontFamily: 'monospace', fontSize: 22,
+    letterSpacing: 4, fontWeight: '700',
+  },
 });

@@ -3,24 +3,17 @@ import {
   View, Text, TextInput, Pressable, StyleSheet, Alert, ScrollView, FlatList, Modal,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import QRCode from 'react-native-qrcode-svg';
 import { useIdentity } from '@/lib/identity';
 import { useContacts, sasFor } from '@/lib/contacts';
 import { sasCode, fromHex } from '@/lib/crypto';
 import type { Contact } from '@/lib/types';
 
-// INVARIANT I9 (and T-003 implementation): a contact is NEVER considered
-// verified until the user has independently confirmed the 7-digit SAS code
-// with the peer over a separate channel AND tapped the explicit "I verified"
-// button in the modal below. There is no other code path to 'verified' state.
-//
-// INVARIANT I13: aliases stay local-only. Nothing on this screen leaves
-// the device.
-//
-// MISMATCHED IS IMMOVABLE: once a user taps "Mark mismatched" on a contact,
-// the data layer refuses to transition back. The only recovery is
-// removeContact + re-add. This is intentionally non-reversible — a
-// recoverable mismatch is a social-engineering vector
-// ("oh I made a mistake, undo it").
+// INVARIANT I9 (T-003): contacts are NEVER verified without an explicit
+// out-of-band SAS comparison + tap of "I verified" in the modal.
+// INVARIANT I13: aliases stay local-only.
+// MISMATCHED IS IMMOVABLE: only recovery is delete + re-add.
 
 type PendingAdd = {
   pubkey_hex: string;
@@ -35,6 +28,9 @@ export default function Contacts() {
   const [alias, setAlias] = useState('');
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<PendingAdd | null>(null);
+  const [showMyQr, setShowMyQr] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
 
   if (!identity) return <View style={s.center}><Text style={s.dim}>Unlocking…</Text></View>;
 
@@ -61,12 +57,9 @@ export default function Contacts() {
     try {
       await addContact({
         pubkey_hex: peerPubLower,
-        sign_pubkey_hex: peerPubLower,   // exchange separately in a future ticket
+        sign_pubkey_hex: peerPubLower,
         alias: a,
       });
-      // Open the SAS confirm modal — this is the ONLY path to 'verified'.
-      // Closing the modal without confirming leaves the contact at the
-      // default 'unverified' state. INVARIANT I9.
       setPending({
         pubkey_hex: peerPubLower,
         alias: a,
@@ -106,13 +99,7 @@ export default function Contacts() {
     );
   };
 
-  const onLeaveUnverified = () => {
-    // Honest default: leave at unverified. No badge promotion. The user can
-    // come back later and verify (Settings panel feature is deferred to a
-    // follow-up; for now they re-add the same key — addContact preserves
-    // sas_state on re-add per T-002 implementation).
-    setPending(null);
-  };
+  const onLeaveUnverified = () => setPending(null);
 
   const onMarkExistingMismatched = (c: Contact) => {
     Alert.alert(
@@ -144,6 +131,31 @@ export default function Contacts() {
     );
   };
 
+  // Open camera. Asks for permission if needed.
+  const onScan = async () => {
+    if (!permission?.granted) {
+      const res = await requestPermission();
+      if (!res.granted) {
+        Alert.alert('Camera blocked', 'Stingray needs camera access to scan a peer\'s public-key QR.');
+        return;
+      }
+    }
+    setScanning(true);
+  };
+
+  // Triggered when the camera reads a QR. Validates and autofills the input.
+  const onScanned = ({ data }: { data: string }) => {
+    if (!scanning) return; // ignore repeated callbacks after first scan
+    const candidate = data.trim().toLowerCase();
+    if (candidate.length !== 64 || !/^[0-9a-f]{64}$/.test(candidate)) {
+      setScanning(false);
+      Alert.alert('Not a stingray key', 'The QR did not contain a 64-char hex public key.');
+      return;
+    }
+    setScanning(false);
+    setPeerPub(candidate);
+  };
+
   const contactList = Object.values(contacts).sort((a, b) =>
     a.alias.localeCompare(b.alias),
   );
@@ -153,25 +165,35 @@ export default function Contacts() {
       <View style={s.card}>
         <Text style={s.label}>Your public key</Text>
         <Text selectable style={s.mono}>{myPub}</Text>
-        <Pressable style={s.btn} onPress={() => { void Clipboard.setStringAsync(myPub); Alert.alert('Copied'); }}>
-          <Text style={s.btnText}>Copy</Text>
-        </Pressable>
+        <View style={s.row}>
+          <Pressable style={[s.btn, { flex: 1 }]} onPress={() => { void Clipboard.setStringAsync(myPub); Alert.alert('Copied'); }}>
+            <Text style={s.btnText}>Copy</Text>
+          </Pressable>
+          <Pressable style={[s.btn, { flex: 1, backgroundColor: '#23c483' }]} onPress={() => setShowMyQr(true)}>
+            <Text style={[s.btnText, { color: 'black' }]}>Show QR</Text>
+          </Pressable>
+        </View>
         <Text style={s.help}>
-          Share this on a channel the stingray cannot intercept (in person, signed paper, QR
-          on an air-gapped device). Anyone with your key can send you encrypted messages.
+          Share this on a channel the stingray cannot intercept (in person, signed paper,
+          QR on an air-gapped device). Tap Show QR to have the peer scan it.
         </Text>
       </View>
 
       <View style={s.card}>
         <Text style={s.label}>Add contact</Text>
-        <TextInput
-          style={s.input}
-          placeholder="Peer public key (64 hex chars)"
-          placeholderTextColor="#888"
-          autoCapitalize="none"
-          value={peerPub}
-          onChangeText={setPeerPub}
-        />
+        <View style={s.row}>
+          <TextInput
+            style={[s.input, { flex: 1 }]}
+            placeholder="Peer public key (64 hex chars)"
+            placeholderTextColor="#888"
+            autoCapitalize="none"
+            value={peerPub}
+            onChangeText={setPeerPub}
+          />
+          <Pressable style={s.scanBtn} onPress={() => { void onScan(); }}>
+            <Text style={s.scanBtnText}>Scan</Text>
+          </Pressable>
+        </View>
         <TextInput
           style={s.input}
           placeholder="Local alias (only you see this)"
@@ -181,13 +203,12 @@ export default function Contacts() {
           maxLength={30}
         />
         {livePreviewSas ? (
-          <View style={s.sasBox}>
-            <Text style={s.sasLabel}>SAS verification code</Text>
-            <Text style={s.sas}>{livePreviewSas}</Text>
+          <View style={s.sasBoxBig}>
+            <Text style={s.sasLabelBig}>SAS verification code</Text>
+            <Text style={s.sasBig}>{livePreviewSas}</Text>
             <Text style={s.help}>
-              Both of you must see the SAME 7 digits. After saving, you&apos;ll be asked
-              to confirm — only confirm when you have compared this with the peer on
-              a SEPARATE channel.
+              Both phones MUST show the SAME 7 digits. Compare out-of-band before tapping
+              "I verified" in the next step.
             </Text>
           </View>
         ) : null}
@@ -205,56 +226,87 @@ export default function Contacts() {
         {loading ? (
           <Text style={s.dim}>Loading contacts…</Text>
         ) : contactList.length === 0 ? (
-          <Text style={s.dim}>No contacts yet. Paste a peer&apos;s public key above to add one.</Text>
+          <Text style={s.dim}>No contacts yet. Paste a peer&apos;s public key above or scan a QR.</Text>
         ) : (
           <FlatList
             scrollEnabled={false}
             data={contactList}
             keyExtractor={(c) => c.pubkey_hex}
             ItemSeparatorComponent={() => <View style={s.sep} />}
-            renderItem={({ item }) => (
-              <View style={s.contactRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.contactAlias}>{item.alias}</Text>
-                  <Text style={s.contactPub} numberOfLines={1}>{item.pubkey_hex}</Text>
-                  <View style={s.statusRow}>
-                    <Text style={[s.contactStatus, statusColor(item.sas_state)]}>
-                      {statusLabel(item.sas_state)}
-                    </Text>
+            renderItem={({ item }) => {
+              const itemSas = sasCode(fromHex(myPub), fromHex(item.pubkey_hex));
+              return (
+                <View style={s.contactRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.contactAlias}>{item.alias}</Text>
+                    <Text style={s.contactPub} numberOfLines={1}>{item.pubkey_hex}</Text>
+                    <View style={s.statusRow}>
+                      <Text style={[s.contactStatus, statusColor(item.sas_state)]}>
+                        {statusLabel(item.sas_state)}
+                      </Text>
+                    </View>
+                    <Text style={s.sasInline}>SAS: <Text style={s.sasInlineCode}>{itemSas}</Text></Text>
+                    {item.sas_state !== 'mismatched' ? (
+                      <Pressable hitSlop={8} onPress={() => onMarkExistingMismatched(item)}>
+                        <Text style={s.markMismatched}>Mark mismatched →</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
-                  {item.sas_state !== 'mismatched' ? (
-                    <Pressable hitSlop={8} onPress={() => onMarkExistingMismatched(item)}>
-                      <Text style={s.markMismatched}>Mark mismatched →</Text>
-                    </Pressable>
-                  ) : null}
+                  <Pressable onPress={() => onRemove(item)} hitSlop={8}>
+                    <Text style={s.removeBtn}>Remove</Text>
+                  </Pressable>
                 </View>
-                <Pressable onPress={() => onRemove(item)} hitSlop={8}>
-                  <Text style={s.removeBtn}>Remove</Text>
-                </Pressable>
-              </View>
-            )}
+              );
+            }}
           />
         )}
       </View>
 
-      {/* T-003 confirm modal — the ONLY path to sas_state='verified' from
-          UI. INVARIANT I9 + forbidden_patterns B5.2 implementation. */}
-      <Modal
-        visible={!!pending}
-        transparent
-        animationType="fade"
-        onRequestClose={onLeaveUnverified}
-      >
+      {/* "Show my QR" modal — the peer scans this to get my pubkey */}
+      <Modal visible={showMyQr} transparent animationType="fade" onRequestClose={() => setShowMyQr(false)}>
+        <View style={s.modalBackdrop}>
+          <View style={[s.modalCard, { alignItems: 'center' }]}>
+            <Text style={s.modalTitle}>Your public key</Text>
+            <Text style={s.modalBody}>Have the peer scan this with their stingray app → Contacts → Scan.</Text>
+            <View style={s.qrBox}>
+              <QRCode value={myPub} size={260} backgroundColor="white" color="black" />
+            </View>
+            <Text selectable style={[s.mono, { textAlign: 'center' }]}>{myPub}</Text>
+            <Pressable style={[s.modalBtn, s.modalBtnPrimary]} onPress={() => setShowMyQr(false)}>
+              <Text style={s.modalBtnPrimaryText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Scan-peer-QR modal */}
+      <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
+        <View style={s.scanBg}>
+          <CameraView
+            style={s.cameraFill}
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={onScanned}
+          />
+          <View style={s.scanOverlay}>
+            <Text style={s.scanHint}>Point at the peer&apos;s public-key QR</Text>
+            <Pressable style={[s.modalBtn, { backgroundColor: '#333' }]} onPress={() => setScanning(false)}>
+              <Text style={s.modalBtnText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Confirm-SAS modal — the only path to sas_state='verified' */}
+      <Modal visible={!!pending} transparent animationType="fade" onRequestClose={onLeaveUnverified}>
         <View style={s.modalBackdrop}>
           <View style={s.modalCard}>
             <Text style={s.modalTitle}>Confirm SAS</Text>
             <Text style={s.modalBody}>
               Compare these 7 digits with {pending?.alias ?? 'the peer'} on a SEPARATE channel
-              (in person, paper, voice on a different device). Both sides must see the same
-              code.
+              (in person, paper, voice on a different device). Both sides must see the same code.
             </Text>
-            <View style={s.modalSasBox}>
-              <Text style={s.modalSas}>{pending?.sas}</Text>
+            <View style={s.modalSasBoxBig}>
+              <Text style={s.modalSasBig}>{pending?.sas}</Text>
             </View>
             <Pressable style={[s.modalBtn, s.modalBtnPrimary]} onPress={() => { void onConfirmVerified(); }}>
               <Text style={s.modalBtnPrimaryText}>I verified the same 7 digits</Text>
@@ -290,9 +342,6 @@ function statusColor(state: Contact['sas_state']) {
   }
 }
 
-// Exported so the conversations screen, chat header, and any future
-// per-contact surface can render the same dot consistently. Pure presentation.
-// Renamed in T-003 — was inline in T-002 contacts.tsx, now centralised.
 void sasFor;
 
 const s = StyleSheet.create({
@@ -303,37 +352,74 @@ const s = StyleSheet.create({
   label: { color: 'white', fontWeight: '600' },
   mono: { color: '#23c483', fontFamily: 'monospace', fontSize: 12 },
   input: { borderWidth: 1, borderColor: '#333', borderRadius: 8, padding: 12, color: 'white' },
-  btn: { padding: 10, borderRadius: 8, backgroundColor: '#333', alignItems: 'center' },
+  row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  btn: { padding: 12, borderRadius: 8, backgroundColor: '#333', alignItems: 'center' },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: 'white', fontWeight: '600' },
   help: { color: '#888', fontSize: 12 },
-  sasBox: { borderWidth: 1, borderColor: '#23c483', borderRadius: 8, padding: 10, gap: 4 },
-  sasLabel: { color: '#aaa', fontSize: 12 },
-  sas: { color: '#23c483', fontFamily: 'monospace', fontSize: 28, letterSpacing: 4 },
+  scanBtn: {
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: 8,
+    backgroundColor: '#23c483', alignItems: 'center', justifyContent: 'center',
+  },
+  scanBtnText: { color: 'black', fontWeight: '700' },
+
+  // Bigger inline SAS preview (was 28pt)
+  sasBoxBig: {
+    borderWidth: 1, borderColor: '#23c483', borderRadius: 8,
+    padding: 14, gap: 6, backgroundColor: '#0b0b0d',
+    alignItems: 'center',
+  },
+  sasLabelBig: { color: '#aaa', fontSize: 13 },
+  sasBig: {
+    color: '#23c483',
+    fontFamily: 'monospace',
+    fontSize: 44,
+    letterSpacing: 8,
+    fontWeight: '700',
+  },
+
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   contactAlias: { color: 'white', fontWeight: '600' },
   contactPub: { color: '#666', fontFamily: 'monospace', fontSize: 11, marginTop: 2 },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   contactStatus: { fontSize: 12 },
+  sasInline: { color: '#888', fontSize: 12, marginTop: 4 },
+  sasInlineCode: { color: '#23c483', fontFamily: 'monospace', fontWeight: '700' },
   markMismatched: { color: '#e54848', fontSize: 11, marginTop: 4 },
   sep: { height: 1, backgroundColor: '#222' },
   removeBtn: { color: '#e54848', fontWeight: '600' },
-  modalBackdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center', padding: 16,
-  },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 16 },
   modalCard: { backgroundColor: '#16161a', borderRadius: 12, padding: 18, gap: 12 },
-  modalTitle: { color: 'white', fontSize: 20, fontWeight: '700' },
+  modalTitle: { color: 'white', fontSize: 22, fontWeight: '700' },
   modalBody: { color: '#bbb', fontSize: 14, lineHeight: 20 },
-  modalSasBox: {
-    borderWidth: 1, borderColor: '#23c483', borderRadius: 8,
-    padding: 12, alignItems: 'center', backgroundColor: '#0b0b0d',
+  qrBox: { backgroundColor: 'white', padding: 12, borderRadius: 8 },
+
+  // Bigger SAS in confirm modal (was 32pt)
+  modalSasBoxBig: {
+    borderWidth: 2, borderColor: '#23c483', borderRadius: 10,
+    padding: 18, alignItems: 'center', backgroundColor: 'black',
   },
-  modalSas: { color: '#23c483', fontFamily: 'monospace', fontSize: 32, letterSpacing: 6 },
-  modalBtn: { padding: 12, borderRadius: 8, alignItems: 'center', backgroundColor: '#222' },
+  modalSasBig: {
+    color: '#23c483',
+    fontFamily: 'monospace',
+    fontSize: 56,
+    letterSpacing: 10,
+    fontWeight: '700',
+  },
+
+  modalBtn: { padding: 14, borderRadius: 8, alignItems: 'center', backgroundColor: '#222' },
   modalBtnPrimary: { backgroundColor: '#23c483' },
-  modalBtnPrimaryText: { color: 'black', fontWeight: '700' },
+  modalBtnPrimaryText: { color: 'black', fontWeight: '700', fontSize: 16 },
   modalBtnText: { color: 'white', fontWeight: '600' },
   modalBtnDestructive: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#e54848' },
   modalBtnDestructiveText: { color: '#e54848', fontWeight: '600' },
+
+  scanBg: { flex: 1, backgroundColor: 'black' },
+  cameraFill: { flex: 1 },
+  scanOverlay: {
+    position: 'absolute', bottom: 40, left: 16, right: 16,
+    padding: 16, gap: 12, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 12,
+  },
+  scanHint: { color: 'white', textAlign: 'center', fontSize: 14 },
 });
