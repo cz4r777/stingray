@@ -393,7 +393,9 @@ const s = StyleSheet.create({
   card: { backgroundColor: '#16161a', borderRadius: 10, padding: 14, gap: 10 },
   label: { color: 'white', fontWeight: '600' },
   mono: { color: '#23c483', fontFamily: 'monospace', fontSize: 12 },
-  input: { borderWidth: 1, borderColor: '#333', borderRadius: 8, padding: 12, color: 'white' },
+  // v0.1.6: explicit fontSize so pasted hex / aliases are always visible
+  // on Android OEM skins that don't pick up a sane default.
+  input: { borderWidth: 1, borderColor: '#333', borderRadius: 8, padding: 12, color: 'white', fontSize: 15 },
   row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   btn: { padding: 12, borderRadius: 8, backgroundColor: '#333', alignItems: 'center' },
   btnDisabled: { opacity: 0.6 },

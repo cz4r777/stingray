@@ -134,7 +134,9 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0b0d', padding: 24, justifyContent: 'center', gap: 12 },
   title: { fontSize: 28, fontWeight: '600', color: 'white' },
   sub: { color: '#aaa', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#333', borderRadius: 8, padding: 12, color: 'white', backgroundColor: '#16161a' },
+  // v0.1.6: explicit fontSize so the field is never rendered at the system
+  // default tiny size on some Android OEM skins.
+  input: { borderWidth: 1, borderColor: '#333', borderRadius: 8, padding: 12, color: 'white', backgroundColor: '#16161a', fontSize: 16 },
   btn: { backgroundColor: '#23c483', padding: 14, borderRadius: 8, alignItems: 'center' },
   btnText: { color: 'black', fontWeight: '700' },
   btnDisabled: { opacity: 0.75 },

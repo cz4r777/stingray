@@ -5,7 +5,7 @@ import { useIdentity } from '@/lib/identity';
 import { useContacts, aliasFor, sasFor, refuseMediaSend } from '@/lib/contacts';
 import { useConversations } from '@/lib/conversations';
 import { composeAndSend, drainInbox } from '@/lib/envelope';
-import { subscribeInbox, fromB64 } from '@/lib/relay';
+import { subscribeInbox, fromB64, isDemoRelay } from '@/lib/relay';
 import { openEnvelope, utf8, sasCode, fromHex } from '@/lib/crypto';
 import type { Contact, Plaintext } from '@/lib/types';
 
@@ -28,8 +28,13 @@ export default function Chat() {
   // 'unverified' for peers without a contact record. INVARIANT I9.
   const trustState = peer ? sasFor(contacts, peer) : 'unverified';
   const headerAlias = peer ? aliasFor(contacts, peer) : 'Chat';
+  // v0.1.6: cap the title length so long aliases (or fingerprint fallbacks)
+  // don't shove the back button off the left edge on small Androids. The
+  // navigation header doesn't honour adjustsFontSizeToFit; truncating in JS
+  // is the only reliable fix.
+  const trimmedAlias = headerAlias.length > 22 ? headerAlias.slice(0, 19) + '…' : headerAlias;
   const headerTitle = peer
-    ? `${trustDotChar(trustState)} ${headerAlias}`
+    ? `${trustDotChar(trustState)} ${trimmedAlias}`
     : 'Chat';
 
   // SAS code for THIS conversation. Shown prominently at the top of the chat
@@ -124,6 +129,15 @@ export default function Chat() {
           headerTitleStyle: trustHeaderStyle(trustState),
         }}
       />
+      {isDemoRelay ? (
+        <View style={[s.trustBanner, s.demoBanner]}>
+          <Text style={s.trustBannerText}>
+            Demo build — no relay configured. Encryption and biometric work,
+            but messages cannot leave the device. Run a Supabase relay (see the
+            README "Self-hosting the relay") and rebuild to enable sends.
+          </Text>
+        </View>
+      ) : null}
       {trustState !== 'verified' ? (
         <View style={[s.trustBanner, trustBannerColor(trustState)]}>
           <Text style={s.trustBannerText}>
@@ -170,6 +184,11 @@ export default function Chat() {
           placeholder="Encrypted message"
           placeholderTextColor="#888"
           onSubmitEditing={send}
+          multiline
+          textAlignVertical="center"
+          blurOnSubmit
+          autoCorrect={false}
+          autoComplete="off"
         />
         <Pressable style={s.send} onPress={send}>
           <Text style={{ color: 'black', fontWeight: '700' }}>Send</Text>
@@ -211,11 +230,21 @@ const s = StyleSheet.create({
   mineText: { color: 'black' },
   theirsText: { color: 'white' },
   composer: { flexDirection: 'row', padding: 8, gap: 8, borderTopWidth: 1, borderColor: '#222', backgroundColor: '#0b0b0d', alignItems: 'center' },
-  input: { flex: 1, borderWidth: 1, borderColor: '#333', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, color: 'white' },
+  // v0.1.6: explicit fontSize so the input is never rendered at the system
+  // default tiny size on devices that don't pick up a sensible default
+  // (some Android OEM skins do this). minHeight gives multiline room so
+  // long pastes wrap and stay visible instead of clipping single-line.
+  input: {
+    flex: 1, borderWidth: 1, borderColor: '#333', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 10,
+    color: 'white', fontSize: 16,
+    minHeight: 44, maxHeight: 120,
+  },
   send: { backgroundColor: '#23c483', paddingHorizontal: 16, borderRadius: 20, justifyContent: 'center' },
   attach: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' },
   attachText: { color: '#888', fontSize: 22, lineHeight: 22 },
   trustBanner: { paddingHorizontal: 12, paddingVertical: 8 },
+  demoBanner: { backgroundColor: '#0e2a3a' },
   trustBannerText: { color: 'white', fontSize: 12 },
   sasStrip: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

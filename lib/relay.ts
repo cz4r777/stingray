@@ -24,6 +24,16 @@ if (!url || !anonKey) {
   );
 }
 
+// v0.1.6: the public APK ships with a placeholder relay URL so the app boots
+// on a real device. We surface this as a clean "demo mode" instead of letting
+// the user see a raw "network request failed" when sends hit a non-existent
+// host. Detection is by the literal sentinel host — explicit and grep-able.
+const PLACEHOLDER_HOSTS = ['demo-relay.invalid'];
+export const isDemoRelay: boolean = (() => {
+  try { return PLACEHOLDER_HOSTS.includes(new URL(url).hostname); }
+  catch { return true; }
+})();
+
 export const relay = createClient(url, anonKey, {
   auth: {
     storage: Platform.OS === 'web' ? undefined : AsyncStorage,
@@ -40,6 +50,14 @@ export async function sendEnvelope(args: {
   ephemeral_pubkey: Uint8Array;
   bucket: number;
 }): Promise<{ id: string } | { error: string }> {
+  if (isDemoRelay) {
+    return {
+      error:
+        'Demo build — no relay is configured. Encryption + biometric work, '
+        + 'but sends cannot leave the device. To run a real relay, see the '
+        + 'README ("Self-hosting the relay").',
+    };
+  }
   const v = await assertFaraday();
   if (!v.allowed) return { error: `Refused: ${v.reason}` };
 
@@ -58,6 +76,7 @@ export async function sendEnvelope(args: {
 }
 
 export async function fetchInbox(my_pubkey_hex: string): Promise<RelayEnvelope[]> {
+  if (isDemoRelay) return [];
   const v = await assertFaraday();
   if (!v.allowed) return [];
   const { data, error } = await relay
@@ -72,6 +91,7 @@ export async function fetchInbox(my_pubkey_hex: string): Promise<RelayEnvelope[]
 // After local decrypt, the envelope is removed from the relay. This minimises
 // the amount of metadata sitting at the server. See docs/invariants.md I11.
 export async function ackEnvelope(id: string): Promise<void> {
+  if (isDemoRelay) return;
   const v = await assertFaraday();
   if (!v.allowed) return;
   await relay.from('envelopes').delete().eq('id', id);
