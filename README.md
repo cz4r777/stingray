@@ -1,6 +1,6 @@
 # stingray
 
-> **End-to-end encrypted peer-to-peer messaging that refuses to transmit on the cellular radio so an IMSI catcher cannot intercept anything.**
+> **End-to-end encrypted peer-to-peer messaging that refuses to transmit on the cellular radio, reducing exposure to IMSI catchers and radio-layer interception.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Status: pure alpha — for feedback](https://img.shields.io/badge/status-pure_alpha_%E2%80%94_for_feedback-orange.svg)
@@ -16,24 +16,50 @@
 
 ---
 
-## Why this exists — the thesis
+## Problem statement — the thesis
 
-Modern secure messengers protect message content, but they still rely on the **cellular radio**. That reliance exposes users to radio‑layer interception (cell‑site simulators, IMSI catchers, forced downgrades, and metadata harvesting). These are structural properties of the telecom stack, not application bugs.
+The mobile communications stack still carries legacy trust assumptions that are too weak for high-assurance messaging. Modern secure messengers do a strong job protecting message content at the application layer, but many still inherit risk from the underlying carrier path: radio-layer interception, tower impersonation, downgrade behavior, signaling leakage, and metadata exposure.
 
-Stingray takes a different position: **if the transport layer is compromised, do not use it.** Instead of hardening the radio, Stingray removes it from the trust boundary and enforces a strict transport invariant.
+The defining problem is that **the radio itself can become part of the attack surface**. If the transport is untrusted, application-layer encryption alone does not fully solve the exposure.
+
+Conventional secure messengers harden the application layer while still riding the cellular radio. That is a reasonable design choice for general-purpose messaging. stingray takes a different position for higher-assurance use cases: **if the transport cannot be trusted, remove it from the trust boundary entirely.**
+
+stingray therefore does not attempt to harden cellular transport. It refuses to use it.
+
+- **Wi-Fi only** — Wi-Fi, Ethernet, or attested-VPN-over-Wi-Fi are the only allowed transports. The app **refuses to send or receive** when the only available route is the cellular radio. This is enforced as the project's [INVARIANT I1](docs/invariants.md).
+- **End-to-end encrypted on top** — XSalsa20-Poly1305 sealed boxes with a fresh ephemeral keypair per envelope; Argon2id KDF gates the local vault; SAS verification gates active-MITM at the pubkey-exchange moment.
+- **The relay is an opaque pipe** — a single Supabase table holds `recipient_pubkey | ciphertext | ephemeral_pubkey | bucket | timestamp`. **The server has no key and cannot decrypt anything.** No accounts, no sender field, no message metadata. The privacy boundary is the encryption, not the database policy.
+- **Recovery-free** — lose the passphrase, lose the account. No server-side recovery means no server-held material that could decrypt your data.
 
 ---
 
-## Background (optional)
+## Design position
 
-A real‑world encounter motivated the project; the experience highlighted a structural weakness: **the radio itself can become the attack surface**. This repository focuses on the technical response to that class of interception. (This note is optional background and not required to evaluate the design.)
+stingray is a defensive communications architecture for environments where the carrier path cannot be assumed trustworthy.
+
+The design goal is straightforward:
+
+- remove cellular transport from the trust boundary
+- minimize metadata exposure
+- keep keys local
+- fail closed when transport guarantees are not met
+
+This repository is not positioned as a general-purpose messenger. It is a transport-constrained privacy system for operators who need stronger assurances than conventional carrier-routed messaging can provide.
+
+The practical use cases are straightforward:
+
+- field teams operating on untrusted infrastructure
+- researchers and security professionals testing high-assurance messaging models
+- organizations that need communications resilience in degraded or intercept-prone environments
+
+stingray is the technical response to one specific architectural problem:
+**if the radio path is the weak link, stop treating it as trusted transport.**
 
 ---
 
 ## Position
 
-**Counter‑intelligence, not crime.**  
-Stingray is a defensive communications architecture intended for legitimate operators working in hostile or compromised environments: field teams, humanitarian workers, researchers, and other professionals who require a transport model that avoids radio‑layer interception.
+Stingray is a defensive communications architecture intended for legitimate operators working in hostile, degraded, or otherwise untrusted communications environments. The system is designed for cases where the transport model itself requires stronger guarantees than conventional carrier-routed messaging can provide.
 
 This project is **not** intended to facilitate unlawful activity. It is a technical tool for reducing exposure to unauthorized interception in environments where such interception is a realistic operational risk.
 
@@ -127,3 +153,29 @@ See `docs/framework.md §Launch Standard` for the full readiness rubric.
 
 ## What it is, in one diagram
 
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  YOUR DEVICE                                                        │
+│   ┌─ vault ─────────────────────────────────────────────────────┐   │
+│   │   Argon2id KDF (passphrase → key)                            │   │
+│   │   X25519 + Ed25519 keypairs (generated on-device, never sent)│   │
+│   │   contacts.v1     conversations.v1   ← encrypted local store  │   │
+│   └──────────────────────────────────────────────────────────────┘   │
+│                              │                                       │
+│                              │ Wi-Fi / Ethernet ONLY                  │
+│                              │ (Faraday gate refuses cellular)        │
+└──────────────────────────────┼─────────────────────────────────────┘
+                               ▼
+            ┌──────────────────────────────────────┐
+            │  RELAY  (Supabase, or self-hosted)    │
+            │     one table, opaque ciphertext      │
+            │     no accounts, no sender field      │
+            │     no plaintext can be derived       │
+            └──────────────────────────────────────┘
+                               │
+                               ▼
+                          THE OTHER PERSON
+                          (same defense)
+```
+
+The relay is a dumb pipe. Anyone reading its database sees only "recipient pubkey X received an opaque blob of bucket size Y at time Z." That's the entire metadata surface.
